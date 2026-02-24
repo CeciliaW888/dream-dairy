@@ -1,47 +1,7 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
-
-// Points component that takes an image Data URL and turns it into particles
-const PhotoPoints = ({ imageUrl }) => {
-  const pointsRef = useRef();
-  
-  // Create particle data from the image
-  const [positions, colors] = useMemo(() => {
-    if (!imageUrl) return [new Float32Array(), new Float32Array()];
-    
-    // Create an offscreen canvas to read pixel data
-    const img = new Image();
-    img.src = imageUrl;
-    
-    // To avoid too many particles, we scale down to Max 200x200
-    const maxDimension = 150; 
-    let width = img.width;
-    let height = img.height;
-    
-    const aspect = width / height;
-    if (width > height) {
-      width = maxDimension;
-      height = maxDimension / aspect;
-    } else {
-      height = maxDimension;
-      width = maxDimension * aspect;
-    }
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    
-    // We need to wait for image to load to do this properly
-    // This useMemo is synchronous, so we're faking it for the initial render
-    // A real implementation would use a TextureLoader, but for raw pixel reading:
-    return [new Float32Array(), new Float32Array()];
-  }, [imageUrl]);
-
-  return null; // Will replace with proper async loading
-}
 
 const AsyncPhotoPoints = ({ imageUrl, onLoaded, settings, analyzer, analyzerData }) => {
   const pointsRef = useRef();
@@ -123,7 +83,7 @@ const AsyncPhotoPoints = ({ imageUrl, onLoaded, settings, analyzer, analyzerData
       if (onLoaded) onLoaded();
     };
     img.src = imageUrl;
-  }, [imageUrl]);
+  }, [imageUrl, onLoaded]);
 
   useFrame((state) => {
     if (pointsRef.current) {
@@ -196,29 +156,24 @@ const AsyncPhotoPoints = ({ imageUrl, onLoaded, settings, analyzer, analyzerData
   );
 };
 
+// Pre-generate ambient particle positions at module level (pure at render time)
+const AMBIENT_COUNT = 3000;
+const AMBIENT_POSITIONS = new Float32Array(AMBIENT_COUNT * 3);
+const AMBIENT_ORIGINAL = new Float32Array(AMBIENT_COUNT * 3);
+for (let i = 0; i < AMBIENT_COUNT; i++) {
+  AMBIENT_POSITIONS[i*3] = (Math.random() - 0.5) * 40;
+  AMBIENT_POSITIONS[i*3+1] = (Math.random() - 0.5) * 40;
+  AMBIENT_POSITIONS[i*3+2] = (Math.random() - 0.5) * 40;
+  AMBIENT_ORIGINAL[i*3] = AMBIENT_POSITIONS[i*3];
+  AMBIENT_ORIGINAL[i*3+1] = AMBIENT_POSITIONS[i*3+1];
+  AMBIENT_ORIGINAL[i*3+2] = AMBIENT_POSITIONS[i*3+2];
+}
+
 // Generic ambient particles for when no photo is loaded or combined
 const AmbientParticles = ({ settings, analyzer, analyzerData }) => {
   const pointsRef = useRef();
-  const originalPosRef = useRef(new Float32Array());
-  
-  const [positions] = useMemo(() => {
-    const count = 3000;
-    const positions = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      positions[i*3] = (Math.random() - 0.5) * 40;
-      positions[i*3+1] = (Math.random() - 0.5) * 40;
-      positions[i*3+2] = (Math.random() - 0.5) * 40;
-    }
-    const originalPos = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-        originalPos[i*3] = positions[i*3];
-        originalPos[i*3+1] = positions[i*3+1];
-        originalPos[i*3+2] = positions[i*3+2];
-    }
-    originalPosRef.current = originalPos;
-
-    return [positions];
-  }, []);
+  const originalPosRef = useRef(AMBIENT_ORIGINAL);
+  const positions = AMBIENT_POSITIONS;
 
   useFrame((state) => {
     if (pointsRef.current) {
@@ -270,7 +225,7 @@ const AmbientParticles = ({ settings, analyzer, analyzerData }) => {
   );
 };
 
-export default function Scene({ imageUrl, onLoaded, settings, analyzer, analyzerData }) {
+function Scene({ imageUrl, onLoaded, settings, analyzer, analyzerData }) {
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 1 }}>
       <Canvas>
@@ -299,3 +254,5 @@ export default function Scene({ imageUrl, onLoaded, settings, analyzer, analyzer
     </div>
   );
 }
+
+export default memo(Scene);
