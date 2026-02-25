@@ -1,243 +1,389 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { GoogleGenAI, Modality } from "@google/genai";
 
-export const useVoiceChat = (onSummaryReady, voiceTone = 1, voiceType = "Female") => {
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+export const useVoiceChat = ({ onSummaryReady, voiceName = "Kore", started, persona, onAIAudioChunk }) => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [aiTranscript, setAiTranscript] = useState("");
   const [messages, setMessages] = useState([]);
-  const recognitionRef = useRef(null);
-  const synthRef = useRef(window.speechSynthesis);
-  const [soulData, setSoulData] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [micError, setMicError] = useState(null);
 
-  // Keep a ref to latest messages so callbacks always see current state
+  const sessionRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const micContextRef = useRef(null);
+  const processorRef = useRef(null);
+  const playbackTimeRef = useRef(0);
   const messagesRef = useRef(messages);
+  const onSummaryReadyRef = useRef(onSummaryReady);
+  const aiTranscriptRef = useRef("");
+  const userTranscriptRef = useRef("");
+  const summaryModeRef = useRef(false);
+  const summaryBufferRef = useRef("");
+  const onAIAudioChunkRef = useRef(onAIAudioChunk);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { onSummaryReadyRef.current = onSummaryReady; }, [onSummaryReady]);
+  useEffect(() => { onAIAudioChunkRef.current = onAIAudioChunk; }, [onAIAudioChunk]);
 
-  // Load the AI Soul Configuration
-  useEffect(() => {
-    fetch('/soul.md')
-      .then(res => res.text())
-      .then(text => {
-          setSoulData(text);
-      })
-      .catch(e => console.error("Could not load soul.md", e));
-  }, []);
+  // --- Audio playback helpers ---
 
-  const speak = useCallback((text) => {
-    if (synthRef.current.speaking) {
-      synthRef.current.cancel();
+  function getPlaybackContext() {
+    if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      playbackTimeRef.current = 0;
+    }
+    return audioContextRef.current;
+  }
+
+  function playAudioChunk(base64Data) {
+    const ctx = getPlaybackContext();
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voices = synthRef.current.getVoices();
-
-    let filteredVoices = voices.filter(v => v.lang.includes("en"));
-    if (voiceType === "Male") {
-        filteredVoices = filteredVoices.filter(v =>
-            v.name.includes("David") ||
-            v.name.includes("Mark") ||
-            v.name.includes("Guy") ||
-            v.name.includes("Ryan") ||
-            (v.name.includes("Male") && !v.name.includes("Female"))
-        );
-    } else {
-        filteredVoices = filteredVoices.filter(v =>
-            v.name.includes("Aria") ||
-            v.name.includes("Jenny") ||
-            v.name.includes("Zira") ||
-            v.name.includes("Hazel") ||
-            v.name.includes("Female") ||
-            v.name.includes("Samantha") ||
-            (!v.name.includes("David") && !v.name.includes("Mark") && !v.name.includes("Guy") && !v.name.includes("Ryan") && !v.name.includes("Male"))
-        );
+    const int16 = new Int16Array(bytes.buffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
     }
 
-    if (filteredVoices.length === 0) {
-        filteredVoices = voices.filter(v => v.lang.includes("en"));
+    try {
+      if (onAIAudioChunkRef.current) onAIAudioChunkRef.current(float32);
+    } catch (e) {
+      console.warn("Audio recording chunk error:", e);
     }
 
-    const preferredVoice = filteredVoices.find(v => v.name.includes("Natural")) ||
-                           filteredVoices.find(v => v.name.includes("Online")) ||
-                           filteredVoices[0];
+    const buffer = ctx.createBuffer(1, float32.length, 24000);
+    buffer.getChannelData(0).set(float32);
 
-    if (preferredVoice) utterance.voice = preferredVoice;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
 
-    utterance.pitch = 0.8 * voiceTone;
-    utterance.rate = 0.9;
+    // Gapless scheduling
+    const now = ctx.currentTime;
+    const startTime = Math.max(now, playbackTimeRef.current);
+    source.start(startTime);
+    playbackTimeRef.current = startTime + buffer.duration;
+  }
 
-    synthRef.current.speak(utterance);
-  }, [voiceTone, voiceType]);
-
-  const generateSummary = useCallback((allMessages) => {
-    const userThoughts = allMessages
-      .filter((m) => m.role === "user")
-      .map((m) => m.content)
-      .join(". ");
-    const summary = `Today's reflection touched upon these themes: ${userThoughts.substring(0, 150)}... The atmosphere was captured successfully.`;
-
-    if (onSummaryReady) {
-      onSummaryReady(summary, allMessages);
+  function stopPlayback() {
+    playbackTimeRef.current = 0;
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
     }
-  }, [onSummaryReady]);
+  }
 
-  const generateResponse = useCallback((userText, currentMessages) => {
-    let responseText = "Tell me more about this dream.";
+  // --- Server message handler ---
+  // Uses only refs and state setters (all stable), safe to capture in effect closure
 
-    if (soulData && soulData.includes("Caretaker")) {
-        responseText = "As your caretaker, I am here to hold these memories safely. Tell me more.";
+  function handleServerMessage(message) {
+    const sc = message.serverContent;
+    if (!sc) return;
+
+    // AI audio output — always handle regardless of summary mode
+    if (sc.modelTurn?.parts) {
+      for (const part of sc.modelTurn.parts) {
+        if (part.inlineData?.data) {
+          playAudioChunk(part.inlineData.data);
+          setIsAiSpeaking(true);
+        }
+        // Ignore part.text — the model sends thinking/reasoning text there
+      }
     }
 
-    const lowerText = userText.toLowerCase();
-
-    if (
-      lowerText.includes("scary") ||
-      lowerText.includes("fear") ||
-      lowerText.includes("dark")
-    ) {
-      responseText =
-        "It seems the shadows in this memory are quite deep. What do you think they represent?";
-    } else if (
-      lowerText.includes("happy") ||
-      lowerText.includes("light") ||
-      lowerText.includes("smile")
-    ) {
-      responseText =
-        "There is a warmth in this recollection. Hold onto that feeling.";
-    } else if (lowerText.includes("forget") || lowerText.includes("fade")) {
-      responseText =
-        "Memories often drift like these particles. We can capture it here, safely.";
-    } else if (
-      lowerText.includes("summarize") ||
-      lowerText.includes("finish") ||
-      lowerText.includes("end")
-    ) {
-      responseText =
-        "I will seal this memory for you now. The diary entry is complete.";
-      speak(responseText);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: responseText },
-      ]);
-
-      setTimeout(() => {
-        generateSummary(currentMessages);
-      }, 2000);
+    if (summaryModeRef.current) {
+      if (sc.outputTranscription?.text) {
+        summaryBufferRef.current += sc.outputTranscription.text;
+        setAiTranscript(summaryBufferRef.current);
+      }
+      if (sc.turnComplete) {
+        setIsAiSpeaking(false);
+        const summary = summaryBufferRef.current;
+        if (summary && onSummaryReadyRef.current) {
+          onSummaryReadyRef.current(summary, messagesRef.current);
+        }
+        summaryModeRef.current = false;
+        summaryBufferRef.current = "";
+        setAiTranscript("");
+      }
       return;
     }
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: responseText },
-    ]);
-    speak(responseText);
-  }, [soulData, speak, generateSummary]);
+    // User speech transcription — accumulate chunks like AI transcription
+    if (sc.inputTranscription?.text?.trim()) {
+      userTranscriptRef.current += sc.inputTranscription.text;
+      setTranscript(userTranscriptRef.current);
+    }
 
-  const handleUserMessage = useCallback((text) => {
-    if (!text) return;
+    // AI speech transcription
+    if (sc.outputTranscription?.text) {
+      aiTranscriptRef.current += sc.outputTranscription.text;
+      setAiTranscript(aiTranscriptRef.current);
+    }
 
-    const userMsg = { role: "user", content: text };
+    // Turn complete
+    if (sc.turnComplete) {
+      setIsAiSpeaking(false);
+      const userText = userTranscriptRef.current;
+      if (userText) {
+        setMessages((prev) => [...prev, { role: "user", content: userText }]);
+      }
+      userTranscriptRef.current = "";
+      const aiText = aiTranscriptRef.current;
+      if (aiText) {
+        setMessages((prev) => [...prev, { role: "assistant", content: aiText }]);
+      }
+      aiTranscriptRef.current = "";
+      setAiTranscript("");
+      setTranscript("");
+    }
 
-    setMessages((prev) => {
-      const newMsgs = [...prev, userMsg];
+    // Interruption
+    if (sc.interrupted) {
+      stopPlayback();
+      setIsAiSpeaking(false);
+      const userText = userTranscriptRef.current;
+      if (userText) {
+        setMessages((prev) => [...prev, { role: "user", content: userText }]);
+      }
+      userTranscriptRef.current = "";
+      const aiText = aiTranscriptRef.current;
+      if (aiText) {
+        setMessages((prev) => [...prev, { role: "assistant", content: aiText + "..." }]);
+      }
+      aiTranscriptRef.current = "";
+      setAiTranscript("");
+      setTranscript("");
+    }
+  }
 
-      setTimeout(() => {
-        generateResponse(text, newMsgs);
-      }, 1000);
+  // --- Connect to Gemini Live when session starts ---
 
-      return newMsgs;
-    });
-    setTranscript("");
-  }, [generateResponse]);
-
-  // Initialize speech recognition ONCE
   useEffect(() => {
-    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
+    if (!started || !persona || !ai) return;
 
-      recognition.onresult = (event) => {
-        let interimTranscript = "";
-        let finalTranscript = "";
+    let cancelled = false;
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
+    async function connect() {
+      try {
+        const session = await ai.live.connect({
+          model: "gemini-2.5-flash-native-audio-latest",
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
+              },
+            },
+            systemInstruction: persona,
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+          },
+          callbacks: {
+            onopen() {
+              if (!cancelled) {
+                setIsConnected(true);
+                console.log("Connected to Gemini Live");
+              }
+            },
+            onmessage(msg) {
+              if (!cancelled) handleServerMessage(msg);
+            },
+            onerror(e) {
+              console.error("Gemini Live error:", e);
+            },
+            onclose() {
+              if (!cancelled) {
+                setIsConnected(false);
+                console.log("Disconnected from Gemini Live");
+              }
+            },
+          },
+        });
+
+        if (cancelled) {
+          session.close();
+          return;
+        }
+        sessionRef.current = session;
+      } catch (e) {
+        console.error("Failed to connect to Gemini Live:", e);
+      }
+    }
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (sessionRef.current) {
+        sessionRef.current.close();
+        sessionRef.current = null;
+      }
+      setIsConnected(false);
+    };
+  }, [started, voiceName, persona]);
+
+  // --- Microphone toggle ---
+
+  const toggleListening = useCallback(async () => {
+    if (isListening) {
+      if (processorRef.current) {
+        processorRef.current.disconnect();
+        processorRef.current = null;
+      }
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
+        micStreamRef.current = null;
+      }
+      if (micContextRef.current) {
+        micContextRef.current.close();
+        micContextRef.current = null;
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      setMicError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: { ideal: 16000 }, channelCount: 1 },
+      });
+      micStreamRef.current = stream;
+
+      const micCtx = new AudioContext({ sampleRate: 16000 });
+      micContextRef.current = micCtx;
+      const source = micCtx.createMediaStreamSource(stream);
+      const processor = micCtx.createScriptProcessor(4096, 1, 1);
+
+      // Silent gain node to prevent mic feedback through speakers
+      const silentGain = micCtx.createGain();
+      silentGain.gain.value = 0;
+
+      processor.onaudioprocess = (e) => {
+        if (!sessionRef.current) return;
+
+        const float32 = e.inputBuffer.getChannelData(0);
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          int16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32768)));
         }
 
-        setTranscript(interimTranscript);
-
-        if (finalTranscript) {
-          handleUserMessage(finalTranscript.trim());
+        const uint8 = new Uint8Array(int16.buffer);
+        let binary = "";
+        for (let i = 0; i < uint8.length; i++) {
+          binary += String.fromCharCode(uint8[i]);
         }
-      };
+        const base64 = btoa(binary);
 
-      recognition.onerror = (event) => {
-        console.error("Speech recognition error", event.error);
-        if (event.error !== 'no-speech') {
-           setIsListening(false);
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening((currentIsListening) => {
-            if (currentIsListening && recognitionRef.current) {
-                try {
-                    recognitionRef.current.start();
-                } catch {
-                   // ignore
-                }
-            }
-            return currentIsListening;
+        sessionRef.current.sendRealtimeInput({
+          media: { mimeType: "audio/pcm;rate=16000", data: base64 },
         });
       };
 
-      recognitionRef.current = recognition;
-    } else {
-      console.warn("Speech recognition not supported in this browser.");
-    }
+      source.connect(processor);
+      processor.connect(silentGain);
+      silentGain.connect(micCtx.destination);
+      processorRef.current = processor;
 
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, [handleUserMessage]);
-
-  const toggleListening = useCallback(() => {
-    if (!recognitionRef.current) return;
-
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      recognitionRef.current.start();
       setIsListening(true);
-      setTranscript("");
+    } catch (e) {
+      console.error("Mic error:", e);
+      if (e.name === "NotAllowedError") {
+        setMicError("Microphone access denied. Please allow microphone in your browser settings.");
+      } else if (e.name === "NotFoundError") {
+        setMicError("No microphone found. Please connect a microphone.");
+      } else {
+        setMicError("Could not access microphone.");
+      }
     }
   }, [isListening]);
 
+  // --- Text input fallback ---
+
   const sendTextMessage = useCallback((text) => {
-    handleUserMessage(text);
-  }, [handleUserMessage]);
+    if (!text || !sessionRef.current) return;
+
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+
+    sessionRef.current.sendClientContent({
+      turns: [{ role: "user", parts: [{ text }] }],
+    });
+  }, []);
+
+  // --- Summary request ---
+
+  const requestSummary = useCallback(() => {
+    if (!sessionRef.current) return;
+
+    // Stop any current AI speech immediately
+    stopPlayback();
+    setIsAiSpeaking(false);
+    aiTranscriptRef.current = "";
+    setAiTranscript("");
+
+    summaryModeRef.current = true;
+    summaryBufferRef.current = "";
+
+    sessionRef.current.sendClientContent({
+      turns: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: "Please provide a brief, poetic summary of our conversation so far, suitable as a diary entry. Focus on the themes and emotions discussed. Keep it to 2-3 sentences.",
+            },
+          ],
+        },
+      ],
+    });
+  }, []);
+
+  // --- Load saved transcript ---
 
   const loadTranscript = useCallback((savedMessages) => {
     setMessages(savedMessages);
   }, []);
 
-  const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  // --- Cleanup on unmount ---
+
+  useEffect(() => {
+    return () => {
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (micContextRef.current && micContextRef.current.state !== "closed") {
+        micContextRef.current.close();
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close();
+      }
+      if (sessionRef.current) {
+        sessionRef.current.close();
+      }
+    };
+  }, []);
 
   return {
     isListening,
     transcript,
+    aiTranscript,
     messages,
+    isConnected,
+    isAiSpeaking,
+    micError,
     toggleListening,
     sendTextMessage,
+    requestSummary,
     loadTranscript,
-    speechSupported,
+    micStream: micStreamRef.current,
   };
 };

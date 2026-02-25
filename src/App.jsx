@@ -1,21 +1,32 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import Scene from "./components/Scene";
 import OverlayUI from "./components/OverlayUI";
-import ErrorBoundary from "./components/ErrorBoundary";
 import { v4 as uuidv4 } from "uuid";
+import { saveAudioBlob } from "./lib/audioDB";
 
-const LOADING_TIMEOUT_MS = 15000;
+const DEFAULT_IMAGE = "/images/little-prince.png";
+
+const audioTracks = [
+  { src: "/audio/ambient.mp3", title: "Ambient Drift", artist: "Atmosphere" },
+  { src: "/audio/lofi-jazz.mp3", title: "LoFi Jazz", artist: "Atmosphere" },
+  { src: "/audio/night-cafe.mp3", title: "Night Cafe", artist: "Atmosphere" },
+  { src: "/audio/space-jazz.mp3", title: "Space Jazz", artist: "Atmosphere" },
+];
 
 export default function App() {
-  const [photoUrl, setPhotoUrl] = useState(null);
+  const [photoUrl, setPhotoUrl] = useState(DEFAULT_IMAGE);
+  const [started, setStarted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [diaries, setDiaries] = useState(() => {
-    try {
-      const saved = localStorage.getItem("dream-diaries");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
+    const saved = localStorage.getItem("dream-diaries");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to load diaries", e);
+      }
     }
+    return [];
   });
   const [currentDiary, setCurrentDiary] = useState(null);
   const [settings, setSettings] = useState({
@@ -24,19 +35,10 @@ export default function App() {
   });
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
 
-  const audioTracks = [
-    { src: "/audio/ambient.mp3", title: "Ambient Drift", artist: "Atmosphere" },
-    { src: "/audio/lofi-jazz.mp3", title: "LoFi Jazz", artist: "Atmosphere" },
-    { src: "/audio/night-cafe.mp3", title: "Night Cafe", artist: "Atmosphere" },
-    { src: "/audio/space-jazz.mp3", title: "Space Jazz", artist: "Atmosphere" },
-  ];
-
   // Audio Analyzer
-  const analyzerRef = useRef(null);
-  const dataArrayRef = useRef(null);
-  const loadingTimerRef = useRef(null);
+  const analyzerRef = React.useRef(null);
+  const dataArrayRef = React.useRef(null);
 
-  // Initialize Audio Context on first interaction
   useEffect(() => {
     window.initAudioContext = () => {
       if (analyzerRef.current) return;
@@ -59,44 +61,31 @@ export default function App() {
         console.warn("Audio Context init failed", e);
       }
     };
-    return () => { delete window.initAudioContext; };
   }, []);
 
-
-  // Loading screen timeout — auto-dismiss after 15s with manual close
-  const startLoading = useCallback(() => {
-    setIsLoading(true);
-    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
-    loadingTimerRef.current = setTimeout(() => {
-      setIsLoading(false);
-    }, LOADING_TIMEOUT_MS);
-  }, []);
-
-  const stopLoading = useCallback(() => {
-    setIsLoading(false);
-    if (loadingTimerRef.current) {
-      clearTimeout(loadingTimerRef.current);
-      loadingTimerRef.current = null;
+  const startSession = () => {
+    setStarted(true);
+    const audio = document.getElementById("bg-music");
+    if (audio) {
+      audio.play().catch(() => {});
+      if (window.initAudioContext) window.initAudioContext();
     }
-  }, []);
+  };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUploadAndStart = (e) => {
     const file = e.target.files[0];
     if (file) {
-      startLoading();
+      setIsLoading(true);
       const reader = new FileReader();
       reader.onload = (event) => {
         setPhotoUrl(event.target.result);
-      };
-      reader.onerror = () => {
-        stopLoading();
-        console.error("Failed to read file");
+        startSession();
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveDiary = (summary, messages) => {
+  const handleSaveDiary = async (summary, messages, audioBlob) => {
     const newDiary = {
       id: uuidv4(),
       date: new Date().toLocaleDateString("en-US", {
@@ -109,28 +98,34 @@ export default function App() {
       photoUrl: photoUrl,
       summary: summary,
       messages: messages,
+      hasAudio: !!audioBlob,
     };
 
     const newDiaries = [newDiary, ...diaries];
     setDiaries(newDiaries);
-    try {
-      localStorage.setItem("dream-diaries", JSON.stringify(newDiaries));
-    } catch (e) {
-      console.error("Storage quota exceeded. Consider clearing old entries.", e);
-    }
+    localStorage.setItem("dream-diaries", JSON.stringify(newDiaries));
     setCurrentDiary(newDiary);
+
+    if (audioBlob) {
+      try {
+        await saveAudioBlob(newDiary.id, audioBlob);
+      } catch (e) {
+        console.warn("Failed to save audio recording:", e);
+      }
+    }
   };
 
   const handleLoadDiary = (diary) => {
     if (diary) {
-      startLoading();
+      setIsLoading(true);
       setPhotoUrl(null);
       setCurrentDiary(diary);
-
+      setStarted(true);
       setTimeout(() => setPhotoUrl(diary.photoUrl), 50);
     } else {
       setCurrentDiary(null);
-      setPhotoUrl(null);
+      setPhotoUrl(DEFAULT_IMAGE);
+      setStarted(false);
     }
   };
 
@@ -144,32 +139,25 @@ export default function App() {
       ></audio>
 
       {isLoading && (
-        <div className="loading-screen interactive" role="alert" aria-live="assertive">
-          <button
-            className="loading-close"
-            onClick={stopLoading}
-            aria-label="Dismiss loading screen"
-          >
-            Close
-          </button>
-          <div className="spinner" aria-hidden="true"></div>
+        <div className="loading-screen interactive">
+          <div className="spinner"></div>
           <div>Reconstructing Atmosphere...</div>
         </div>
       )}
 
-      <ErrorBoundary fallbackMessage="The 3D scene encountered an error. Try refreshing the page.">
-        <Scene
-          imageUrl={photoUrl}
-          onLoaded={stopLoading}
-          settings={settings}
-          analyzerData={dataArrayRef}
-          analyzer={analyzerRef}
-        />
-      </ErrorBoundary>
+      <Scene
+        imageUrl={photoUrl}
+        onLoaded={() => setIsLoading(false)}
+        settings={settings}
+        analyzerData={dataArrayRef}
+        analyzer={analyzerRef}
+      />
 
       <OverlayUI
-        onPhotoUpload={handlePhotoUpload}
+        onPhotoUploadAndStart={handlePhotoUploadAndStart}
         photoLoaded={!!photoUrl}
+        started={started}
+        onStart={startSession}
         onSaveDiary={handleSaveDiary}
         diaries={diaries}
         onLoadDiary={handleLoadDiary}
@@ -179,6 +167,11 @@ export default function App() {
         onNextTrack={() =>
           setCurrentTrackIndex((prev) => (prev + 1) % audioTracks.length)
         }
+        audioTracks={audioTracks}
+        currentTrackIndex={currentTrackIndex}
+        onSelectTrack={setCurrentTrackIndex}
+        analyzer={analyzerRef}
+        analyzerData={dataArrayRef}
       />
     </>
   );

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useVoiceChat } from '../hooks/useVoiceChat';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import TopNav from './TopNav';
 import AudioPlayer from './AudioPlayer';
 import UploadZone from './UploadZone';
@@ -7,28 +8,114 @@ import ConversationPanel from './ConversationPanel';
 import DiaryGallery from './DiaryGallery';
 import CalendarModal from './CalendarModal';
 import SettingsModal from './SettingsModal';
+import MusicModal from './MusicModal';
+import PersonaModal from './PersonaModal';
 
 export default function OverlayUI({
-  onPhotoUpload,
+  onPhotoUploadAndStart,
   photoLoaded,
+  started,
+  onStart,
   onSaveDiary,
   diaries,
   onLoadDiary,
   currentDiary,
   onSettingsChange,
   currentTrack,
-  onNextTrack
+  onNextTrack,
+  audioTracks,
+  currentTrackIndex,
+  onSelectTrack,
+  analyzer,
+  analyzerData,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [musicModalOpen, setMusicModalOpen] = useState(false);
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [voiceName, setVoiceName] = useState("Kore");
   const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [coordinates, setCoordinates] = useState('50\u00b004\'41.5"N 19\u00b050\'43.9"E');
 
-  // Voice Chat Hook — no more window globals
-  const { isListening, transcript, messages, toggleListening, sendTextMessage, loadTranscript, speechSupported } = useVoiceChat((summary, allMsgs) => {
-    onSaveDiary(summary, allMsgs);
+  // Persona state
+  const [personaId, setPersonaId] = useState(() => {
+    return localStorage.getItem('selected-persona-id') || 'default';
   });
+  const [persona, setPersona] = useState(null);
+
+  // Load persona on mount and when personaId changes
+  useEffect(() => {
+    if (personaId === 'custom') {
+      const customText = localStorage.getItem('custom-persona');
+      if (customText) {
+        setPersona(customText);
+        return;
+      }
+      // Fall back to default if custom was removed
+      setPersonaId('default');
+    }
+
+    // Load default persona from soul.md
+    fetch('/soul.md')
+      .then((res) => res.text())
+      .then((text) => setPersona(text))
+      .catch((e) => console.error('Could not load soul.md', e));
+  }, [personaId]);
+
+  const handleSelectPersona = useCallback((id, customText) => {
+    setPersonaId(id);
+    localStorage.setItem('selected-persona-id', id);
+    if (id === 'custom' && customText) {
+      setPersona(customText);
+    }
+  }, []);
+
+  const {
+    isRecording, startRecording, feedAIAudio, reconnectMic,
+    stopRecording, cleanup: cleanupRecorder,
+  } = useAudioRecorder();
+
+  const recorderStartedRef = useRef(false);
+
+  const onSummaryReady = useCallback(async (summary, allMsgs) => {
+    const blob = await stopRecording();
+    recorderStartedRef.current = false;
+    onSaveDiary(summary, allMsgs, blob);
+  }, [onSaveDiary, stopRecording]);
+
+  const {
+    isListening, transcript, aiTranscript, messages, isConnected,
+    isAiSpeaking, micError, toggleListening, sendTextMessage,
+    requestSummary, loadTranscript, micStream,
+  } = useVoiceChat({ onSummaryReady, voiceName, started, persona, onAIAudioChunk: feedAIAudio });
+
+  // Start recording when mic is first activated
+  useEffect(() => {
+    if (isListening && !recorderStartedRef.current && micStream) {
+      startRecording(micStream);
+      recorderStartedRef.current = true;
+    }
+  }, [isListening, micStream, startRecording]);
+
+  // Handle mic toggle — reconnect new stream to recorder
+  useEffect(() => {
+    if (recorderStartedRef.current && micStream) {
+      reconnectMic(micStream);
+    }
+  }, [micStream, reconnectMic]);
+
+  // Cleanup recorder on unmount
+  useEffect(() => {
+    return () => cleanupRecorder();
+  }, [cleanupRecorder]);
+
+  const handleSettingsChange = useCallback((newSettings) => {
+    if (newSettings.voiceName !== undefined) {
+      setVoiceName(newSettings.voiceName);
+    }
+    onSettingsChange(newSettings);
+  }, [onSettingsChange]);
 
   // Load transcript if viewing an old diary
   useEffect(() => {
@@ -63,6 +150,8 @@ export default function OverlayUI({
           setGalleryOpen(false);
           onLoadDiary(null);
         }}
+        onToggleMusic={() => setMusicModalOpen(!musicModalOpen)}
+        onTogglePersona={() => setPersonaModalOpen(!personaModalOpen)}
       />
 
       {/* Top Right Coordinates */}
@@ -74,7 +163,7 @@ export default function OverlayUI({
       {/* Bottom Center Title */}
       <div className="ui-bottom-center">
         <h2 className="chapter-title">
-          {currentDiary ? currentDiary.date : "The Blank Canvas"}
+          {currentDiary ? currentDiary.date : ''}
         </h2>
       </div>
 
@@ -83,7 +172,7 @@ export default function OverlayUI({
 
       {/* Bottom Right Controls */}
       <div className="ui-bottom-right interactive">
-        {photoLoaded && !currentDiary && (
+        {started && !currentDiary && (
           <button
             className="icon-btn settings-trigger"
             onClick={() => setSettingsOpen(true)}
@@ -94,21 +183,28 @@ export default function OverlayUI({
         )}
       </div>
 
-      {/* Upload Zone — now with drag-and-drop */}
-      {!photoLoaded && !currentDiary && !menuOpen && (
-        <UploadZone onPhotoUpload={onPhotoUpload} />
+      {/* Landing CTA — shown when session hasn't started */}
+      {!started && !currentDiary && !menuOpen && !galleryOpen && (
+        <UploadZone onBegin={onStart} onPhotoUploadAndStart={onPhotoUploadAndStart} />
       )}
 
       {/* Conversation Overlay */}
-      {photoLoaded && (
+      {started && photoLoaded && (
         <ConversationPanel
           messages={messages}
           transcript={transcript}
+          aiTranscript={aiTranscript}
           isListening={isListening}
+          isConnected={isConnected}
+          isAiSpeaking={isAiSpeaking}
           toggleListening={toggleListening}
           sendTextMessage={sendTextMessage}
+          requestSummary={requestSummary}
           currentDiary={currentDiary}
-          speechSupported={speechSupported}
+          micError={micError}
+          analyzer={analyzer}
+          analyzerData={analyzerData}
+          isRecording={isRecording}
         />
       )}
 
@@ -121,7 +217,7 @@ export default function OverlayUI({
         />
       )}
 
-      {/* Calendar Modal — now uses real dates, no mock data */}
+      {/* Calendar Modal */}
       {menuOpen && (
         <CalendarModal
           diaries={diaries}
@@ -130,12 +226,31 @@ export default function OverlayUI({
         />
       )}
 
-      {/* Settings Modal — debounced, with proper labels */}
+      {/* Settings Modal */}
       {settingsOpen && (
         <SettingsModal
-          settings={{ particleIntensity: 1, voiceTone: 1, voiceType: 'Female' }}
-          onSettingsChange={onSettingsChange}
+          settings={{ particleIntensity: 1, voiceName }}
+          onSettingsChange={handleSettingsChange}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {/* Music Modal */}
+      {musicModalOpen && (
+        <MusicModal
+          tracks={audioTracks}
+          currentTrackIndex={currentTrackIndex}
+          onSelectTrack={onSelectTrack}
+          onClose={() => setMusicModalOpen(false)}
+        />
+      )}
+
+      {/* Persona Modal */}
+      {personaModalOpen && (
+        <PersonaModal
+          currentPersonaId={personaId}
+          onSelectPersona={handleSelectPersona}
+          onClose={() => setPersonaModalOpen(false)}
         />
       )}
     </div>

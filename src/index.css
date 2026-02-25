@@ -304,6 +304,30 @@ body,
   border-color: rgba(100, 150, 90, 0.8);
 }
 
+.btn-pill-secondary {
+  background: rgba(50, 50, 50, 0.3);
+  border-color: rgba(100, 100, 100, 0.4);
+  color: rgba(200, 200, 200, 0.7);
+}
+
+.btn-pill-secondary:hover {
+  background: rgba(60, 60, 60, 0.5);
+  color: #ccc;
+  border-color: rgba(150, 150, 150, 0.6);
+}
+
+.review-card {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.review-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 /* ============================================
    Glassmorphism
    ============================================ */
@@ -354,6 +378,18 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.landing-backdrop {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 4rem;
   pointer-events: none;
   z-index: 50;
 }
@@ -502,11 +538,18 @@ body,
   text-align: left;
 }
 
+.message.streaming {
+  opacity: 0.7;
+  font-style: italic;
+}
+
 .gallery-message {
   background: var(--surface-elevated);
-  border-radius: 12px;
-  font-size: 1rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
   width: 85%;
+  padding: 0.6rem 0.8rem;
+  line-height: 1.4;
 }
 
 .gallery-message.user {
@@ -572,6 +615,23 @@ body,
   pointer-events: auto;
 }
 
+.mic-error {
+  color: #ff6b6b;
+  font-size: 0.75rem;
+  pointer-events: auto;
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
+.listening-indicator {
+  color: var(--accent-pink, #ff6b9d);
+  font-size: 0.75rem;
+  pointer-events: auto;
+  text-align: center;
+  margin-top: 0.5rem;
+  animation: pulse 2s infinite;
+}
+
 /* ============================================
    Audio Player
    ============================================ */
@@ -618,61 +678,86 @@ body,
 .gallery-backdrop {
   background: rgba(5, 5, 5, 0.95);
   backdrop-filter: blur(20px);
+  flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  overflow-x: auto;
-  padding: 4rem 2rem;
-  gap: 2rem;
+  justify-content: center;
+  padding: 4rem 0 2rem;
+  gap: 1.5rem;
+  user-select: none;
+  touch-action: pan-y;
 }
 
-.gallery-scroll {
-  display: flex;
-  gap: 4rem;
-  height: 80vh;
-  padding: 0 10vw;
+/* --- 3D Perspective Stage --- */
+.gallery-stage {
+  position: relative;
+  width: 420px;
+  height: 75vh;
+  perspective: 1200px;
+  perspective-origin: 50% 50%;
 }
 
 .gallery-card {
-  min-width: 400px;
-  width: 400px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.gallery-card-active {
+  cursor: default;
+}
+
+/* Actual image */
+.gallery-card-image-wrapper {
+  width: 100%;
+  height: 220px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-card-bg);
+  flex-shrink: 0;
+}
+
+.gallery-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-card-body {
+  padding: 1.5rem;
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.gallery-card-image {
-  width: 100%;
-  height: 250px;
-  background: var(--surface-card-bg);
-  background-size: cover;
-  background-position: center;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.gallery-card-body {
-  padding: 2rem;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
 .gallery-card-title {
-  font-size: 1.8rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.4rem;
+  margin-bottom: 0.3rem;
 }
 
 .gallery-card-meta {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .gallery-card-summary {
-  font-size: 0.9rem;
-  line-height: 1.8;
+  font-size: 0.85rem;
+  line-height: 1.6;
   color: var(--text-body);
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 }
 
 .gallery-card-messages {
@@ -680,12 +765,75 @@ body,
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.6rem;
+  min-height: 0;
 }
 
 .gallery-load-btn {
-  margin-top: 2rem;
+  margin-top: 1rem;
   align-self: center;
+  flex-shrink: 0;
+}
+
+/* --- Navigation arrows --- */
+.gallery-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  background: rgba(20, 20, 20, 0.7);
+  border: 1px solid var(--border-medium);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.3s;
+  backdrop-filter: blur(8px);
+}
+
+.gallery-arrow:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.gallery-arrow:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+.gallery-arrow-left {
+  left: max(1rem, calc(50% - 260px));
+}
+
+.gallery-arrow-right {
+  right: max(1rem, calc(50% - 260px));
+}
+
+/* --- Dot indicators --- */
+.gallery-dots {
+  display: flex;
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.gallery-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--border-medium);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s;
+}
+
+.gallery-dot.active {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
 }
 
 .gallery-empty {
@@ -1021,6 +1169,195 @@ body,
 }
 
 /* ============================================
+   Recording & Diary Audio
+   ============================================ */
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e53e3e;
+  animation: recording-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes recording-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.diary-audio-play-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-medium);
+}
+
+.diary-audio-btn {
+  margin-bottom: 1rem;
+}
+
+/* ============================================
+   Audio Visualizer
+   ============================================ */
+.audio-visualizer {
+  pointer-events: none;
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.4);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================
+   Landing CTA
+   ============================================ */
+.landing-cta {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  pointer-events: auto;
+}
+
+.landing-title {
+  font-size: 2rem;
+  letter-spacing: 1px;
+  font-weight: 300;
+}
+
+.landing-desc {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  max-width: 400px;
+}
+
+.landing-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+/* ============================================
+   Music Modal
+   ============================================ */
+.music-track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.music-track-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+}
+
+.music-track-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-medium);
+}
+
+.music-track-item.active {
+  border-color: var(--accent-green);
+  background: rgba(74, 103, 65, 0.15);
+}
+
+.music-track-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  flex: 1;
+}
+
+.music-track-artist {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.music-track-playing {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent-green);
+}
+
+/* ============================================
+   Persona Modal
+   ============================================ */
+.persona-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.persona-card-wrapper {
+  position: relative;
+}
+
+.persona-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.8rem 1rem;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+  width: 100%;
+}
+
+.persona-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-medium);
+}
+
+.persona-card.active {
+  border-color: var(--accent-green);
+  background: rgba(74, 103, 65, 0.15);
+}
+
+.persona-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.persona-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.persona-remove-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.persona-remove-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ============================================
    Responsive — Tablet (<=768px)
    ============================================ */
 @media (max-width: 768px) {
@@ -1067,25 +1404,23 @@ body,
     font-size: 1.3rem;
   }
 
-  /* Gallery: vertical on tablet */
-  .gallery-scroll {
-    flex-direction: column;
-    height: auto;
-    padding: 0 2rem;
-    gap: 2rem;
-    overflow-y: auto;
-    overflow-x: hidden;
-    max-height: 80vh;
+  /* Gallery: tablet */
+  .gallery-stage {
+    width: 360px;
+    height: 70vh;
+    perspective: 1000px;
   }
 
-  .gallery-card {
-    min-width: 100%;
-    width: 100%;
-    height: auto;
+  .gallery-card-image-wrapper {
+    height: 180px;
   }
 
-  .gallery-card-image {
-    height: 200px;
+  .gallery-arrow-left {
+    left: 0.5rem;
+  }
+
+  .gallery-arrow-right {
+    right: 0.5rem;
   }
 
   .calendar-modal {
@@ -1163,11 +1498,38 @@ body,
   }
 
   .gallery-backdrop {
-    padding: 2rem 1rem;
+    padding: 3rem 0 1.5rem;
+  }
+
+  .gallery-stage {
+    width: 300px;
+    height: 70vh;
+    perspective: 800px;
+  }
+
+  .gallery-card-image-wrapper {
+    height: 150px;
   }
 
   .gallery-card-title {
-    font-size: 1.4rem;
+    font-size: 1.2rem;
+  }
+
+  .gallery-card-body {
+    padding: 1rem;
+  }
+
+  .gallery-arrow {
+    width: 36px;
+    height: 36px;
+  }
+
+  .gallery-arrow-left {
+    left: 0.3rem;
+  }
+
+  .gallery-arrow-right {
+    right: 0.3rem;
   }
 
   .calendar-title {
