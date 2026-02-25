@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { FiWind } from 'react-icons/fi';
 
-export default function UploadZone({ onPhotoUpload }) {
+export default function UploadZone({ onBegin, onPhotoUploadAndStart }) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const dragCounter = useRef(0);
@@ -38,40 +38,44 @@ export default function UploadZone({ onPhotoUpload }) {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('image/')) {
-        // Create a synthetic event matching the file input shape
-        onPhotoUpload({ target: { files: [file] } });
+        onPhotoUploadAndStart({ target: { files: [file] } });
       }
       e.dataTransfer.clearData();
     }
-  }, [onPhotoUpload]);
+  }, [onPhotoUploadAndStart]);
 
   return (
-    <div className="upload-backdrop interactive">
+    <div className="landing-backdrop interactive">
       <div
-        className={`dropzone interactive ${isDragging ? 'dragging' : ''}`}
-        onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+        className="landing-cta"
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        role="button"
-        tabIndex={0}
-        aria-label="Upload an image to create a memory"
       >
-         <FiWind size={48} className="dropzone-icon" aria-hidden="true" />
-         <h3 className="serif-text dropzone-title">Recall a Memory</h3>
-         <p className="sans-text dropzone-desc">
-           {isDragging ? 'Drop your image here...' : 'Upload or drag an image to reconstruct the atmosphere.'}
-         </p>
-         <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            style={{display: 'none'}}
-            onChange={onPhotoUpload}
-            aria-hidden="true"
-         />
+        <h2 className="serif-text landing-title">Dream Diary</h2>
+        <p className="sans-text landing-desc">
+          {isDragging ? 'Drop your image here...' : 'Begin a conversation with the atmosphere, or upload a photo to set the scene.'}
+        </p>
+        <div className="landing-buttons">
+          <button className="btn-pill interactive" onClick={onBegin}>
+            Begin
+          </button>
+          <button
+            className="btn-pill btn-pill-secondary interactive"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Upload Photo
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={onPhotoUploadAndStart}
+          aria-hidden="true"
+        />
       </div>
     </div>
   );

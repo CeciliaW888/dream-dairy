@@ -1,12 +1,14 @@
 import React from 'react';
 
-export default function TopNav({ menuOpen, galleryOpen, currentDiary, diaries, onToggleGallery, onToggleCalendar, onGoHome }) {
+export default function TopNav({ menuOpen, galleryOpen, currentDiary, diaries, onToggleGallery, onToggleCalendar, onGoHome, onToggleMusic, onTogglePersona }) {
   const navItems = [
     { label: 'THE GARDEN', action: onGoHome },
     { label: 'MEMORY', action: () => {
       if (diaries.length > 0) onToggleGallery();
       else onToggleCalendar();
     }},
+    { label: 'MUSIC', action: onToggleMusic },
+    { label: 'PERSONA', action: onTogglePersona },
   ];
 
   const isActive = (item) => {

@@ -1,9 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
+const GEMINI_VOICES = [
+  { name: 'Kore', desc: 'Warm, calm female' },
+  { name: 'Charon', desc: 'Deep, steady male' },
+  { name: 'Fenrir', desc: 'Low, resonant male' },
+  { name: 'Aoede', desc: 'Bright, expressive female' },
+  { name: 'Puck', desc: 'Playful, energetic' },
+];
+
 export default function SettingsModal({ settings, onSettingsChange, onClose }) {
   const [particleIntensity, setParticleIntensity] = useState(settings?.particleIntensity ?? 1);
-  const [voiceTone, setVoiceTone] = useState(settings?.voiceTone ?? 1);
-  const [voiceType, setVoiceType] = useState(settings?.voiceType ?? "Female");
+  const [voiceName, setVoiceName] = useState(settings?.voiceName ?? 'Kore');
   const backdropRef = useRef(null);
   const debounceRef = useRef(null);
 
@@ -19,29 +26,23 @@ export default function SettingsModal({ settings, onSettingsChange, onClose }) {
     if (e.target === backdropRef.current) onClose();
   };
 
-  // Debounced settings propagation
-  const propagateSettings = useCallback((pi, vt, vType) => {
+  const propagateSettings = useCallback((pi, vn) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       if (onSettingsChange) {
-        onSettingsChange({ particleIntensity: pi, voiceTone: vt, voiceType: vType });
+        onSettingsChange({ particleIntensity: pi, voiceName: vn });
       }
     }, 100);
   }, [onSettingsChange]);
 
   const handleParticleChange = (val) => {
     setParticleIntensity(val);
-    propagateSettings(val, voiceTone, voiceType);
+    propagateSettings(val, voiceName);
   };
 
-  const handleVoiceToneChange = (val) => {
-    setVoiceTone(val);
-    propagateSettings(particleIntensity, val, voiceType);
-  };
-
-  const handleVoiceTypeChange = (val) => {
-    setVoiceType(val);
-    propagateSettings(particleIntensity, voiceTone, val);
+  const handleVoiceChange = (val) => {
+    setVoiceName(val);
+    propagateSettings(particleIntensity, val);
   };
 
   return (
@@ -75,34 +76,20 @@ export default function SettingsModal({ settings, onSettingsChange, onClose }) {
         </div>
 
         <div className="settings-group">
-           <label className="sans-text settings-label" htmlFor="voice-type-select">Voice Persona Type</label>
+           <label className="sans-text settings-label" htmlFor="voice-select">Gemini Voice</label>
            <select
-             id="voice-type-select"
-             value={voiceType}
-             onChange={(e) => handleVoiceTypeChange(e.target.value)}
+             id="voice-select"
+             value={voiceName}
+             onChange={(e) => handleVoiceChange(e.target.value)}
              className="settings-select"
            >
-             <option value="Female">Female (Default)</option>
-             <option value="Male">Male</option>
+             {GEMINI_VOICES.map((v) => (
+               <option key={v.name} value={v.name}>
+                 {v.name} — {v.desc}
+               </option>
+             ))}
            </select>
-        </div>
-
-        <div className="settings-group">
-           <label className="sans-text settings-label" htmlFor="voice-tone-range">Voice Persona Tone</label>
-           <input
-             id="voice-tone-range"
-             type="range"
-             min="0.5"
-             max="2"
-             step="0.1"
-             value={voiceTone}
-             onChange={(e) => handleVoiceToneChange(parseFloat(e.target.value))}
-             className="settings-range"
-             aria-valuemin={0.5}
-             aria-valuemax={2}
-             aria-valuenow={voiceTone}
-           />
-           <p className="settings-hint">Lower for deep/calm, higher for bright/fast.</p>
+           <p className="settings-hint">Changes the AI voice personality.</p>
         </div>
 
         <button className="btn" onClick={onClose}>
