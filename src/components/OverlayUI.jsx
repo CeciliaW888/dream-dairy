@@ -117,10 +117,21 @@ export default function OverlayUI({
     onSettingsChange(newSettings);
   }, [onSettingsChange]);
 
-  // Load transcript if viewing an old diary
+  // Track whether we should load transcript (only from gallery/calendar navigation)
+  const loadDiaryRef = useRef(false);
+
+  const handleNavigateToDiary = useCallback((diary) => {
+    if (diary) {
+      loadDiaryRef.current = true;
+    }
+    onLoadDiary(diary);
+  }, [onLoadDiary]);
+
+  // Load transcript only when explicitly navigating to an old diary
   useEffect(() => {
-    if (currentDiary && currentDiary.messages) {
+    if (currentDiary && currentDiary.messages && loadDiaryRef.current) {
       loadTranscript(currentDiary.messages);
+      loadDiaryRef.current = false;
     }
   }, [currentDiary, loadTranscript]);
 
@@ -212,7 +223,7 @@ export default function OverlayUI({
       {galleryOpen && (
         <DiaryGallery
           diaries={diaries}
-          onLoadDiary={onLoadDiary}
+          onLoadDiary={handleNavigateToDiary}
           onClose={() => setGalleryOpen(false)}
         />
       )}
@@ -221,7 +232,7 @@ export default function OverlayUI({
       {menuOpen && (
         <CalendarModal
           diaries={diaries}
-          onLoadDiary={onLoadDiary}
+          onLoadDiary={handleNavigateToDiary}
           onClose={() => setMenuOpen(false)}
         />
       )}
