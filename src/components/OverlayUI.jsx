@@ -10,6 +10,7 @@ import CalendarModal from './CalendarModal';
 import SettingsModal from './SettingsModal';
 import MusicModal from './MusicModal';
 import PersonaModal from './PersonaModal';
+import VoiceCloneModal from './VoiceCloneModal';
 
 export default function OverlayUI({
   onPhotoUploadAndStart,
@@ -34,6 +35,7 @@ export default function OverlayUI({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [musicModalOpen, setMusicModalOpen] = useState(false);
   const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [voiceCloneModalOpen, setVoiceCloneModalOpen] = useState(false);
   const [voiceName, setVoiceName] = useState("Kore");
   const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [coordinates, setCoordinates] = useState('50\u00b004\'41.5"N 19\u00b050\'43.9"E');
@@ -152,6 +154,7 @@ export default function OverlayUI({
         }}
         onToggleMusic={() => setMusicModalOpen(!musicModalOpen)}
         onTogglePersona={() => setPersonaModalOpen(!personaModalOpen)}
+        onToggleVoiceClone={() => setVoiceCloneModalOpen(!voiceCloneModalOpen)}
       />
 
       {/* Top Right Coordinates */}
@@ -251,6 +254,18 @@ export default function OverlayUI({
           currentPersonaId={personaId}
           onSelectPersona={handleSelectPersona}
           onClose={() => setPersonaModalOpen(false)}
+        />
+      )}
+
+      {/* Voice Clone Modal */}
+      {voiceCloneModalOpen && (
+        <VoiceCloneModal
+          onClose={() => setVoiceCloneModalOpen(false)}
+          onVoiceCloned={(voiceId, name) => {
+            console.log('Voice cloned:', voiceId, name);
+            // TODO: Add to voice library and allow selection
+            setVoiceCloneModalOpen(false);
+          }}
         />
       )}
     </div>

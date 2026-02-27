@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, memo, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 
 // --- Soft circular particle texture (created once) ---
@@ -441,9 +440,7 @@ function Scene({ imageUrl, onLoaded, settings, analyzer, analyzerData }) {
       width: '100vw', height: '100vh', zIndex: 1,
       cursor: imageUrl ? WATER_DROP_CURSOR : 'default',
     }}>
-      <Canvas>
-        <PerspectiveCamera makeDefault position={[0, 0, 15]} fov={45} />
-
+      <Canvas camera={{ position: [0, 0, 15], fov: 45 }}>
         <fog attach="fog" args={['#050505', 25, 50]} />
 
         <ambientLight intensity={0.5} />
@@ -463,16 +460,6 @@ function Scene({ imageUrl, onLoaded, settings, analyzer, analyzerData }) {
             pressedRef={pressedRef}
           />
         )}
-
-        <OrbitControls
-          enablePan={false}
-          enableZoom={true}
-          maxDistance={30}
-          minDistance={5}
-          autoRotate={false}
-          autoRotateSpeed={0.5}
-          dampingFactor={0.05}
-        />
       </Canvas>
     </div>
   );

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function TopNav({ menuOpen, galleryOpen, currentDiary, diaries, onToggleGallery, onToggleCalendar, onGoHome, onToggleMusic, onTogglePersona }) {
+export default function TopNav({ menuOpen, galleryOpen, currentDiary, diaries, onToggleGallery, onToggleCalendar, onGoHome, onToggleMusic, onTogglePersona, onToggleVoiceClone }) {
   const navItems = [
     { label: 'THE GARDEN', action: onGoHome },
     { label: 'MEMORY', action: () => {
@@ -9,6 +9,7 @@ export default function TopNav({ menuOpen, galleryOpen, currentDiary, diaries, o
     }},
     { label: 'MUSIC', action: onToggleMusic },
     { label: 'PERSONA', action: onTogglePersona },
+    { label: 'VOICES', action: onToggleVoiceClone },
   ];
 
   const isActive = (item) => {
