@@ -263,7 +263,9 @@ export default function OverlayUI({
           onClose={() => setVoiceCloneModalOpen(false)}
           onVoiceCloned={(voiceId, name) => {
             console.log('Voice cloned:', voiceId, name);
-            // TODO: Add to voice library and allow selection
+            // Automatically switch to the new cloned voice
+            setVoiceName(voiceId);
+            handleSettingsChange({ voiceName: voiceId });
             setVoiceCloneModalOpen(false);
           }}
         />

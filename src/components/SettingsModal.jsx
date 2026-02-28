@@ -11,8 +11,44 @@ const GEMINI_VOICES = [
 export default function SettingsModal({ settings, onSettingsChange, onClose }) {
   const [particleIntensity, setParticleIntensity] = useState(settings?.particleIntensity ?? 1);
   const [voiceName, setVoiceName] = useState(settings?.voiceName ?? 'Kore');
+  const [clonedVoices, setClonedVoices] = useState([]);
   const backdropRef = useRef(null);
   const debounceRef = useRef(null);
+
+  // Load cloned voices from localStorage
+  const loadClonedVoices = useCallback(() => {
+    const saved = localStorage.getItem('clonedVoices');
+    if (saved) {
+      try {
+        const voices = JSON.parse(saved);
+        setClonedVoices(voices);
+      } catch (e) {
+        console.error('Failed to parse cloned voices:', e);
+      }
+    } else {
+      setClonedVoices([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadClonedVoices();
+    
+    // Listen for storage changes (when a new voice is cloned)
+    const handleStorageChange = (e) => {
+      if (e.key === 'clonedVoices') {
+        loadClonedVoices();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    // Also listen for custom event from same window
+    window.addEventListener('voiceCloned', loadClonedVoices);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('voiceCloned', loadClonedVoices);
+    };
+  }, [loadClonedVoices]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -76,20 +112,38 @@ export default function SettingsModal({ settings, onSettingsChange, onClose }) {
         </div>
 
         <div className="settings-group">
-           <label className="sans-text settings-label" htmlFor="voice-select">Gemini Voice</label>
+           <label className="sans-text settings-label" htmlFor="voice-select">AI Voice</label>
            <select
              id="voice-select"
              value={voiceName}
              onChange={(e) => handleVoiceChange(e.target.value)}
              className="settings-select"
            >
-             {GEMINI_VOICES.map((v) => (
-               <option key={v.name} value={v.name}>
-                 {v.name} — {v.desc}
-               </option>
-             ))}
+             {/* Gemini built-in voices */}
+             <optgroup label="Gemini Voices">
+               {GEMINI_VOICES.map((v) => (
+                 <option key={v.name} value={v.name}>
+                   {v.name} — {v.desc}
+                 </option>
+               ))}
+             </optgroup>
+             
+             {/* Cloned voices */}
+             {clonedVoices.length > 0 && (
+               <optgroup label="Your Cloned Voices">
+                 {clonedVoices.map((v) => (
+                   <option key={v.id} value={v.id}>
+                     {v.name} — Cloned voice
+                   </option>
+                 ))}
+               </optgroup>
+             )}
            </select>
-           <p className="settings-hint">Changes the AI voice personality.</p>
+           <p className="settings-hint">
+             {clonedVoices.length > 0 
+               ? `${clonedVoices.length} cloned voice${clonedVoices.length > 1 ? 's' : ''} available`
+               : 'Clone a voice from the menu to use it here'}
+           </p>
         </div>
 
         <button className="btn" onClick={onClose}>

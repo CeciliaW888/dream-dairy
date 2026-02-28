@@ -141,6 +141,9 @@ export default function VoiceCloneModal({ onClose, onVoiceCloned }) {
       });
       localStorage.setItem('clonedVoices', JSON.stringify(clonedVoices));
 
+      // Notify other components
+      window.dispatchEvent(new Event('voiceCloned'));
+
       // Notify parent
       if (onVoiceCloned) {
         onVoiceCloned(result.voice_id, voiceName);
