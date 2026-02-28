@@ -171,7 +171,7 @@ export default function VoiceCloneModal({ onClose, onVoiceCloned }) {
       onClick={handleBackdropClick}
     >
       <div className="modal-container settings-container voice-clone-modal">
-        <button className="close-button" onClick={onClose}>✕</button>
+        <button type="button" className="close-button" onClick={onClose}>✕</button>
         
         <h2>Clone a Voice</h2>
         <p className="modal-subtitle">Upload audio or video to create a voice clone</p>
@@ -218,7 +218,15 @@ export default function VoiceCloneModal({ onClose, onVoiceCloned }) {
 
         {/* Preview Step */}
         {step === 'preview' && audioBlob && (
-          <div className="preview-section">
+          <form 
+            className="preview-section"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (voiceName.trim()) {
+                handleCloneVoice();
+              }
+            }}
+          >
             <div className="audio-info">
               <p className="info-label">✅ Audio extracted!</p>
               <p className="info-detail">Duration: {formatDuration(audioDuration)}</p>
@@ -243,24 +251,37 @@ export default function VoiceCloneModal({ onClose, onVoiceCloned }) {
                 type="text"
                 value={voiceName}
                 onChange={(e) => setVoiceName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (voiceName.trim()) {
+                      handleCloneVoice();
+                    }
+                  }
+                }}
                 placeholder="e.g., Mom, Dad, Friend..."
                 maxLength={50}
+                autoComplete="off"
               />
             </div>
 
             <div className="button-group">
-              <button className="secondary-button" onClick={handleReset}>
+              <button 
+                type="button"
+                className="secondary-button" 
+                onClick={handleReset}
+              >
                 ← Start Over
               </button>
               <button 
+                type="submit"
                 className="primary-button"
-                onClick={handleCloneVoice}
                 disabled={!voiceName.trim()}
               >
                 Clone Voice →
               </button>
             </div>
-          </div>
+          </form>
         )}
 
         {/* Cloning Step */}
@@ -284,7 +305,7 @@ export default function VoiceCloneModal({ onClose, onVoiceCloned }) {
               <span className="label">Voice ID:</span>
               <code>{voiceId}</code>
             </div>
-            <button className="primary-button" onClick={onClose}>
+            <button type="button" className="primary-button" onClick={onClose}>
               Done
             </button>
           </div>
@@ -296,7 +317,7 @@ export default function VoiceCloneModal({ onClose, onVoiceCloned }) {
             <div className="error-icon">⚠️</div>
             <h3>Something Went Wrong</h3>
             <p className="error-message">{error}</p>
-            <button className="primary-button" onClick={handleReset}>
+            <button type="button" className="primary-button" onClick={handleReset}>
               Try Again
             </button>
           </div>
